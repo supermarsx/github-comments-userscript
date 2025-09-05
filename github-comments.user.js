@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         GitHub Codex Quick Comments
-// @namespace    https://github.com/
-// @version      1.0.0
+// @namespace    https://supermarsx.github.io/userscripts
+// @version      1.1.0
 // @description  Add quick-action buttons on GitHub comment boxes to auto-fill and submit: "@codex fix comments", "@codex review", "@codex go go go".
-// @author       Mariana
+// @author       supermarsx
 // @match        https://github.com/*
 // @run-at       document-idle
 // @grant        none
@@ -26,11 +26,79 @@
     .codex-quickbar button { border:1px solid var(--borderColor-muted, #30363d); background:var(--bgColor-default, #0d1117); color:var(--fgColor-default, #c9d1d9); padding:4px 8px; border-radius:6px; font-size:12px; line-height:18px; cursor:pointer; }
     .codex-quickbar button:hover { background:var(--bgColor-muted, #161b22); }
     .codex-quickbar .codex-label { opacity:0.75; font-size:12px; margin-right:4px; }
+    /* Floating toggle for auto-confirm merge */
+    .codex-toggle { position:fixed; left:12px; bottom:12px; z-index:9999; display:flex; gap:8px; align-items:center; background:var(--bgColor-default, #0d1117); border:1px solid var(--borderColor-muted, #30363d); padding:6px 10px; border-radius:8px; box-shadow:0 2px 10px rgba(0,0,0,.3); }
+    .codex-toggle button { border:1px solid var(--borderColor-muted, #30363d); background:transparent; color:var(--fgColor-default, #c9d1d9); padding:4px 8px; border-radius:6px; font-size:12px; line-height:18px; cursor:pointer; }
+    .codex-toggle button:hover { background:var(--bgColor-muted, #161b22); }
   `;
 
   const styleTag = document.createElement('style');
   styleTag.textContent = STYLE;
   document.documentElement.appendChild(styleTag);
+
+  // === Auto Confirm Merge toggle + logic ===
+  const STORAGE_KEY = 'codex_auto_confirm_merge';
+  function loadAutoConfirmPref() {
+    try { return localStorage.getItem(STORAGE_KEY) !== '0'; } catch (_) { return true; }
+  }
+  function saveAutoConfirmPref(v) {
+    try { localStorage.setItem(STORAGE_KEY, v ? '1' : '0'); } catch (_) {}
+  }
+  let autoConfirmMerge = loadAutoConfirmPref();
+  let lastMergeClick = 0;
+
+  function buildAutoConfirmToggle() {
+    if (document.querySelector('.codex-toggle')) return;
+    const wrap = document.createElement('div');
+    wrap.className = 'codex-toggle';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    function sync() {
+      btn.textContent = autoConfirmMerge ? 'Disable auto confirm merge' : 'Enable auto confirm merge';
+      btn.setAttribute('aria-pressed', String(autoConfirmMerge));
+      btn.title = 'Toggle automatic clicking of "Confirm merge" on PRs';
+    }
+    btn.addEventListener('click', () => {
+      autoConfirmMerge = !autoConfirmMerge;
+      saveAutoConfirmPref(autoConfirmMerge);
+      sync();
+    });
+    sync();
+    wrap.appendChild(btn);
+    document.body.appendChild(wrap);
+  }
+
+  function getLabelText(el){
+    return (
+      (el.getAttribute('aria-label') || '') + ' ' + (('value' in el ? el.value : '') || el.textContent || '')
+    ).trim().toLowerCase();
+  }
+
+  function findConfirmMergeButton(){
+    const all = Array.from(document.querySelectorAll('button[type="submit"], input[type="submit"]'))
+      .filter(el => !el.disabled && el.offsetParent !== null);
+    const inMergeBox = (el) => !!el.closest('#partial-pull-merging, .js-merge-pr, .merge-branch-action, form[action*="/merge"]');
+    const candidates = all.filter(el => {
+      const label = getLabelText(el);
+      return inMergeBox(el) && /(confirm (squash and merge|rebase and merge|merge))/.test(label);
+    });
+    return candidates.length ? candidates[candidates.length - 1] : null;
+  }
+
+  function autoConfirmMergeTick(){
+    if (!autoConfirmMerge) return;
+    const now = Date.now();
+    if (now - lastMergeClick < 3000) return; // debounce
+    const btn = findConfirmMergeButton();
+    if (btn) {
+      lastMergeClick = now;
+      btn.click();
+    }
+  }
+
+  // Initialize toggle and periodic checker
+  buildAutoConfirmToggle();
+  setInterval(autoConfirmMergeTick, 800);
 
   /**
    * Try to find the primary submit button for a given form.

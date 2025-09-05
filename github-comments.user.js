@@ -69,19 +69,45 @@
   }
 
   function getLabelText(el){
-    return (
-      (el.getAttribute('aria-label') || '') + ' ' + (('value' in el ? el.value : '') || el.textContent || '')
-    ).trim().toLowerCase();
+    const aria = (el.getAttribute('aria-label') || '').toLowerCase();
+    const val  = (('value' in el ? el.value : '') || '').toLowerCase();
+    const deep = (el.textContent || el.innerText || '').replace(/\s+/g, ' ').trim().toLowerCase();
+    return `${aria} ${val} ${deep}`.trim();
+  }
+  function isVisible(el){
+    return !!(el && (el.offsetParent !== null || (el.getClientRects && el.getClientRects().length)));
   }
 
   function findConfirmMergeButton(){
-    const all = Array.from(document.querySelectorAll('button[type="submit"], input[type="submit"]'))
-      .filter(el => !el.disabled && el.offsetParent !== null);
-    const inMergeBox = (el) => !!el.closest('#partial-pull-merging, .js-merge-pr, .merge-branch-action, form[action*="/merge"]');
-    const candidates = all.filter(el => {
-      const label = getLabelText(el);
-      return inMergeBox(el) && /(confirm (squash and merge|rebase and merge|merge))/.test(label);
-    });
+    // Search common merge containers and any open dialog
+    const scopes = document.querySelectorAll([
+      '#partial-pull-merging',
+      '.js-merge-pr',
+      '.merge-branch-action',
+      'form[action*="/merge"]',
+      '.details-dialog[open]',
+      'dialog[open]'
+    ].join(','));
+
+    const pool = new Set();
+    scopes.forEach(sc => sc.querySelectorAll('button, input[type="submit"]').forEach(el => pool.add(el)));
+    if (!pool.size) {
+      // Fallback global scan
+      document.querySelectorAll('button, input[type="submit"]').forEach(el => pool.add(el));
+    }
+
+    const candidates = Array.from(pool)
+      .filter(el => !el.disabled && isVisible(el))
+      .filter(el => {
+        const t = getLabelText(el);
+        const hasConfirmMerge = t.includes('confirm') && t.includes('merge');
+        const classHit = ['js-merge-commit-button','js-merge-squash-button','js-merge-rebase-button','js-merge-box-button']
+          .some(cls => el.classList && el.classList.contains(cls));
+        return hasConfirmMerge || classHit;
+      });
+
+    return candidates.length ? candidates[candidates.length - 1] : null;
+  });
     return candidates.length ? candidates[candidates.length - 1] : null;
   }
 

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GitHub Codex Quick Comments
 // @namespace    https://supermarsx.github.io/userscripts
-// @version      1.1.0
+// @version      1.2.0
 // @description  Add quick-action buttons on GitHub comment boxes to auto-fill and submit: "@codex fix comments", "@codex review", "@codex go go go".
 // @author       supermarsx
 // @match        https://github.com/*
@@ -106,8 +106,6 @@
         return hasConfirmMerge || classHit;
       });
 
-    return candidates.length ? candidates[candidates.length - 1] : null;
-  });
     return candidates.length ? candidates[candidates.length - 1] : null;
   }
 

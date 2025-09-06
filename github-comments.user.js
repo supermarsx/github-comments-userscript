@@ -45,6 +45,9 @@
   function isVisible(el){
     return !!(el && (el.offsetParent !== null || (el.getClientRects && el.getClientRects().length)));
   }
+  function ellipsize(str, max = 25){
+    return str.length > max ? str.slice(0, max - 1) + '\u2026' : str;
+  }
 
   // ---------- Auto Confirm Merge (toggle + logic) ----------
   const STORAGE_KEY = 'codex_auto_confirm_merge';
@@ -215,8 +218,7 @@
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'btn codex-btn-' + key;
-      const display = label.length > 15 ? label.slice(0,15) + '\u2026' : label;
-      btn.textContent = display;
+      btn.textContent = ellipsize(label);
       btn.dataset.caption = label;
       addCaptionHover(btn);
       btn.addEventListener('click', () => {

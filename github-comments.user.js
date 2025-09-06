@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GitHub Codex Quick Comments
 // @namespace    https://supermarsx.github.io/userscripts
-// @version      1.4.0
+// @version      1.5.0
 // @description  Quick preset comment buttons + optional auto-confirm on PR merge dialogs.
 // @author       supermarsx
 // @match        https://github.com/*
@@ -22,12 +22,13 @@
   // ---------- Styles ----------
   const STYLE = [
     '.codex-quickbar { display:flex; gap:6px; flex-wrap:wrap; margin:6px 0 2px; align-items:center; }',
-    '.codex-quickbar button { border:1px solid var(--borderColor-muted, #30363d); background:var(--bgColor-default, #0d1117); color:var(--fgColor-default, #c9d1d9); padding:4px 8px; border-radius:6px; font-size:12px; line-height:18px; cursor:pointer; }',
+    '.codex-quickbar button { border:1px solid var(--borderColor-muted, #30363d); background:var(--bgColor-default, #0d1117); color:var(--fgColor-default, #c9d1d9); padding:4px 8px; border-radius:6px; font-size:12px; line-height:18px; cursor:pointer; position:relative; }',
     '.codex-quickbar button:hover { background:var(--bgColor-muted, #161b22); }',
     '.codex-quickbar .codex-label { opacity:0.75; font-size:12px; margin-right:4px; }',
     '.codex-toggle { position:fixed; left:12px; bottom:12px; z-index:9999; display:flex; gap:8px; align-items:center; background:var(--bgColor-default, #0d1117); border:1px solid var(--borderColor-muted, #30363d); padding:6px 10px; border-radius:8px; box-shadow:0 2px 10px rgba(0,0,0,.3); }',
-    '.codex-toggle button { border:1px solid var(--borderColor-muted, #30363d); background:transparent; color:var(--fgColor-default, #c9d1d9); padding:4px 8px; border-radius:6px; font-size:12px; line-height:18px; cursor:pointer; }',
-    '.codex-toggle button:hover { background:var(--bgColor-muted, #161b22); }'
+    '.codex-toggle button { border:1px solid var(--borderColor-muted, #30363d); background:transparent; color:var(--fgColor-default, #c9d1d9); padding:4px; border-radius:6px; font-size:16px; line-height:16px; cursor:pointer; width:28px; height:28px; display:flex; align-items:center; justify-content:center; }',
+    '.codex-toggle button[aria-pressed="true"] { background:var(--bgColor-muted, #161b22); }',
+    '.codex-caption { position:absolute; background:var(--bgColor-default, #0d1117); color:var(--fgColor-default, #c9d1d9); border:1px solid var(--borderColor-muted, #30363d); padding:4px 6px; border-radius:6px; font-size:12px; pointer-events:none; opacity:0; transition:opacity .2s; white-space:nowrap; box-shadow:0 2px 10px rgba(0,0,0,.4); z-index:10000; }'
   ].join('\n');
 
   const styleTag = document.createElement('style');
@@ -47,39 +48,81 @@
 
   // ---------- Auto Confirm Merge (toggle + logic) ----------
   const STORAGE_KEY = 'codex_auto_confirm_merge';
+  const QUICKBAR_KEY = 'codex_comment_presets_enabled';
   function loadAutoConfirmPref() {
     try { return localStorage.getItem(STORAGE_KEY) !== '0'; } catch (_) { return true; }
   }
   function saveAutoConfirmPref(v) {
     try { localStorage.setItem(STORAGE_KEY, v ? '1' : '0'); } catch (_) {}
   }
+  function loadQuickbarPref() {
+    try { return localStorage.getItem(QUICKBAR_KEY) !== '0'; } catch (_) { return true; }
+  }
+  function saveQuickbarPref(v) {
+    try { localStorage.setItem(QUICKBAR_KEY, v ? '1' : '0'); } catch (_) {}
+  }
   let autoConfirmMerge = loadAutoConfirmPref();
+  let quickbarEnabled = loadQuickbarPref();
   let lastMergeClick = 0;
 
-  function buildAutoConfirmToggle() {
+  // --- captions ---
+  const caption = document.createElement('div');
+  caption.className = 'codex-caption';
+  document.body.appendChild(caption);
+  function showCaptionFor(el, text){
+    caption.textContent = text;
+    const r = el.getBoundingClientRect();
+    caption.style.left = (r.left + window.scrollX + r.width / 2) + 'px';
+    caption.style.top = (r.top + window.scrollY - 8) + 'px';
+    caption.style.transform = 'translate(-50%, -100%)';
+    caption.style.opacity = '1';
+  }
+  function hideCaption(){
+    caption.style.opacity = '0';
+  }
+  function addCaptionHover(el){
+    let timer;
+    const text = el.dataset.caption;
+    if (!text) return;
+    el.addEventListener('mouseenter', () => {
+      timer = setTimeout(() => showCaptionFor(el, text), 2000);
+    });
+    ['mouseleave','click','blur'].forEach(ev => el.addEventListener(ev, () => { clearTimeout(timer); hideCaption(); }));
+  }
+
+  // --- toggles ---
+  function buildToggleBar() {
     if (document.querySelector('.codex-toggle')) return;
     const wrap = document.createElement('div');
     wrap.className = 'codex-toggle';
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.classList.add('codex-toggle-btn');
-    function sync() {
-      btn.textContent = autoConfirmMerge ? 'Disable auto confirm merge' : 'Enable auto confirm merge';
-      btn.setAttribute('aria-pressed', String(autoConfirmMerge));
-      btn.title = 'Toggle automatic clicking of "Confirm merge" on PRs';
-    }
-    btn.addEventListener('click', () => {
-      autoConfirmMerge = !autoConfirmMerge;
-      saveAutoConfirmPref(autoConfirmMerge);
-      sync();
-    });
-    sync();
-    wrap.appendChild(btn);
+
+    const mkToggle = (icon, captionText, getState, setState) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = icon;
+      b.setAttribute('aria-pressed', String(getState()));
+      b.dataset.caption = captionText;
+      addCaptionHover(b);
+      b.addEventListener('click', () => {
+        const v = !getState();
+        setState(v);
+        b.setAttribute('aria-pressed', String(v));
+      });
+      return b;
+    };
+
+    wrap.appendChild(mkToggle('🤖', 'Auto confirm merge', () => autoConfirmMerge, v => { autoConfirmMerge = v; saveAutoConfirmPref(v); }));
+
+    wrap.appendChild(mkToggle('💬', 'Comment presets', () => quickbarEnabled, v => {
+      quickbarEnabled = v; saveQuickbarPref(v);
+      if (!v) document.querySelectorAll('.codex-quickbar').forEach(el => el.remove());
+      else enhanceAll();
+    }));
+
     document.body.appendChild(wrap);
   }
 
   function findConfirmMergeButton(){
-    window.console.log("TEST")
     // Only search in merge UI contexts (avoid our own toggle or unrelated buttons)
     const ctxSelector = [
       '#discussion_bucket',
@@ -98,7 +141,7 @@
 
     const candidates = Array.from(pool)
       .filter(el => !el.disabled && isVisible(el))
-      .filter(el => !el.closest('.codex-toggle') && !el.classList.contains('codex-toggle-btn'))
+      .filter(el => !el.closest('.codex-toggle'))
       .filter(el => el.closest(ctxSelector))
       .filter(el => {
         const t = getLabelText(el);
@@ -163,6 +206,7 @@
   function buildQuickbar(form, textarea) {
     if (!form || !textarea) return null;
     if (form.dataset.codexQuickbarAttached === '1') return null;
+    if (!quickbarEnabled) return null;
 
     const bar = document.createElement('div');
     bar.className = 'codex-quickbar';
@@ -171,7 +215,10 @@
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'btn codex-btn-' + key;
-      btn.textContent = label;
+      const display = label.length > 15 ? label.slice(0,15) + '\u2026' : label;
+      btn.textContent = display;
+      btn.dataset.caption = label;
+      addCaptionHover(btn);
       btn.addEventListener('click', () => {
         textarea.focus();
         textarea.value = PHRASES[key];
@@ -233,7 +280,7 @@
   }
 
   // ---------- Init ----------
-  buildAutoConfirmToggle();
+  buildToggleBar();
   setInterval(autoConfirmMergeTick, 800); // keep running
 
   enhanceAll();

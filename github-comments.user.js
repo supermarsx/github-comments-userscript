@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GitHub Codex Quick Comments
 // @namespace    https://supermarsx.github.io/userscripts
-// @version      1.3.0
+// @version      1.4.0
 // @description  Quick preset comment buttons + optional auto-confirm on PR merge dialogs.
 // @author       supermarsx
 // @match        https://github.com/*
@@ -14,6 +14,7 @@
 
   const PHRASES = {
     fix: '@codex fix comments',
+    ci: '@codex fix tests, format, lint, types or build failing in ci',
     review: '@codex review',
     go: '@codex go go go',
   };
@@ -184,6 +185,7 @@
     };
 
     bar.appendChild(mkBtn('fix', '⚙️ @codex fix comments'));
+    bar.appendChild(mkBtn('ci', '🛠️ @codex fix tests, format, lint, types or build failing in ci'));
     bar.appendChild(mkBtn('review', '🧐 @codex review'));
     bar.appendChild(mkBtn('go', '🚀 @codex go go go'));
 
